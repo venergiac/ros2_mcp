@@ -2,6 +2,10 @@
 
 A Model Context Protocol (MCP) server that provides AI assistants with tools to introspect and interact with ROS2 robotics systems. This server enables Large Language Models (LLMs) and other AI systems to understand, monitor, and analyze ROS2 robot systems in real-time.
 
+This project is based on Marc Hanheide's implementation
+([LCAS/ros2_mcp](https://github.com/LCAS/ros2_mcp)), which we have adapted to
+work with ROS 2 Humble and MCP SDK v2.
+
 ## Overview
 
 The ROS2 MCP Server bridges the gap between AI assistants and robotics systems by exposing ROS2 functionality through the Model Context Protocol. It provides tools for topic monitoring, sensor data collection, system introspection, and real-time robot state analysis.
@@ -71,32 +75,6 @@ To use this module in your ROS2 workspace, follow these steps:
 and FastMCP dependencies are installed as part of the package.
 
 ## Docker Usage
-
-### Pre-built Images
-
-Docker images are automatically built and published to the L-CAS registry:
-
-```bash
-docker pull lcas.lincoln.ac.uk/<repository-name>:latest
-```
-
-### Building Locally
-
-To build the Docker image locally:
-
-```bash
-docker build -t ros2-mcp .
-```
-
-### Running the Container
-
-```bash
-# Run with ROS2 network access
-docker run -it --rm --network host ros2-mcp
-
-# Run with custom ROS_DOMAIN_ID
-docker run -it --rm --network host -e ROS_DOMAIN_ID=42 ros2-mcp
-```
 
 ### Docker Compose (Recommended)
 
