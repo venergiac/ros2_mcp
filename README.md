@@ -6,7 +6,7 @@ A Model Context Protocol (MCP) server that provides AI assistants with tools to 
 ([LCAS/ros2_mcp](https://github.com/LCAS/ros2_mcp)), which we have adapted to
 work with ROS 2 Humble and MCP SDK v2.**
 
-![ros2_mcp.png](/ros2_mcp.png)
+![ros2_mcp.png](/ros_2_mcp.png)
 
 ## Overview
 
