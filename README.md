@@ -48,41 +48,14 @@ To use this module in your ROS2 workspace, follow these steps:
     git clone <repository-url>
     ```
 
-2. **Install dependencies** using rosdep to automatically handle both ROS and pip dependencies:
-    ```bash
-    cd ~/your_ros2_workspace
-    rosdep install -i --from-paths src/
-    ```
-    This will install the required MCP SDK and FastMCP dependencies along with
-    any other ROS dependencies.
 
-3. **Build the workspace**:
-    ```bash
-    colcon build
-    ```
-
-4. **Source the workspace**:
-    ```bash
-    source install/setup.bash
-    ```
-
-5. **Run the nodes** as needed:
-    ```bash
-    ros2 run ros2_mcp <node_name>
-    ```
-
-**Note:** Make sure Python 3.11 or newer and pip are installed. The MCP SDK v2
-and FastMCP dependencies are installed as part of the package.
-
-## Docker Usage
-
-### Docker Compose (Recommended)
-
-For easier deployment with the SSE interface exposed on port 8000:
+2. For easier deployment with the SSE interface exposed on port 8000:
 
 ```bash
+export ROS_DOMAIN_ID=<your domain id>
+
 # Start the MCP server with Docker Compose
-docker compose up -d
+docker compose up --build
 
 # View logs
 docker compose logs -f ros2-mcp-server
