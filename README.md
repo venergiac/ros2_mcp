@@ -38,41 +38,7 @@ installation. Standard Humble and Iron installations use Python 3.10 and need
 a ROS build compiled for Python 3.11 or newer; Jazzy uses a compatible Python
 version.
 
-### using in your ROS2 workspace
 
-To use this module in your ROS2 workspace, follow these steps:
-
-1. **Clone the repository** into your ROS2 workspace's `src` directory:
-    ```bash
-    cd ~/your_ros2_workspace/src
-    git clone <repository-url>
-    ```
-
-2. **Install dependencies** using rosdep to automatically handle both ROS and pip dependencies:
-    ```bash
-    cd ~/your_ros2_workspace
-    rosdep install -i --from-paths src/
-    ```
-    This will install the required MCP SDK and FastMCP dependencies along with
-    any other ROS dependencies.
-
-3. **Build the workspace**:
-    ```bash
-    colcon build
-    ```
-
-4. **Source the workspace**:
-    ```bash
-    source install/setup.bash
-    ```
-
-5. **Run the nodes** as needed:
-    ```bash
-    ros2 run ros2_mcp <node_name>
-    ```
-
-**Note:** Make sure Python 3.11 or newer and pip are installed. The MCP SDK v2
-and FastMCP dependencies are installed as part of the package.
 
 ## Docker Usage
 

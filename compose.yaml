@@ -25,3 +25,17 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  jupyter-notebook:
+    image: quay.io/jupyter/scipy-notebook:2026-07-28
+    network_mode: "host"
+    environment:
+      NOTEBOOK_ARGS: "--NotebookApp.token='' --NotebookApp.password=''"
+      ROS2_MCP_URL: ${ROS2_MCP_URL:-http://host.docker.internal:8000/sse}
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./notebooks:/home/jovyan/work
+
+      
+
