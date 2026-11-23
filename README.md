@@ -119,7 +119,7 @@ docker run -it \
 --device=/dev/video0 \
 --device=/dev/video1 \
 --device=/dev/gpiomem \
-yahboomtechnology/ros-humble:0.1.0 /bin/bash -i -c "ros2 launch yahboomcar_bringup bringup.launch.py & ros2 run usb_cam usb_cam>
+yahboomtechnology/ros-humble:0.1.0 /bin/bash -i -c "ros2 launch yahboomcar_bringup bringup.launch.py & ros2 run usb_cam usb_cam_node_exe"
 ```
 
 then
