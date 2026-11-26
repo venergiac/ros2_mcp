@@ -30,19 +30,33 @@ simple navigation on RASPBOTV2
 
 ```
 cd tests/RASPBOTv2
-python ros2-agent-ai.py
+python -m pip install -r requirements.txt
+python ros2-agentic-ai.py
 ```
 
-The LangGraph controller requires `langgraph` and `langchain-mcp-adapters` in
-the Python environment used to run the script. Its three node implementations
-are in `robot_agents/orchestrator.py`, `robot_agents/explorer.py`, and
-`robot_agents/advancer.py`. It treats the robot's initial current heading as
-the relative reference and saves camera images in `robot_photos`. The explorer
-rotates incrementally by -25° and then +50°,
-measuring both directions before choosing the one with the most free space.
-If neither is clear enough, it rotates by +50° and then -100°, again choosing
-the clearer direction if safe; otherwise it makes a final +100° turn and
-measures there. ROS 2 `angular.z` is an angular velocity in rad/s, not an angle:
+`ros2-agentic-ai.py` uses four focused nodes: Explorer scans directions,
+Photographer captures images, Advancer moves only the requested distance, and
+the selected orchestrator routes between them. The deterministic orchestrator
+is the default. Choose the Groq LLM orchestrator with `--orchestrator llm`:
+
+```bash
+export MODEL_PROVIDER=groq
+export MODEL_NAME=qwen/qwen3.8-27b
+export GROQ_API_KEY='<your Groq API key>'
+python ros2-agentic-ai.py --orchestrator llm
+```
+
+The legacy `ros2-agent-ai.py` entry point forwards to the unified controller.
+`requirements.txt` lists the Python dependencies for the controller and notebook.
+ROS 2 and the MCP server are provided separately by the robot environment and
+the repository's Docker Compose setup. Explorer treats the robot's initial
+heading as the relative reference and scans in groups:
+`(0, -25, +50)`, then `(+50, -100)`, then `(+100)`. It stops at the first
+group with safe clearance, selects that group's clearest direction, and
+returns every measured direction and distance, then restores its starting
+orientation. The controller realigns to the selected direction immediately
+before Advancer moves. Images are saved in
+`robot_photos`. ROS 2 `angular.z` is an angular velocity in rad/s, not an angle:
 the controller sends `±0.25 rad/s` and computes duration from the observed
 calibration that a 45° request produced about 225° of rotation. It therefore
 uses a 5x calibrated rate (1.25 rad/s), so a 45° turn takes about 0.628 seconds.
@@ -53,10 +67,9 @@ During exploration it prints each incremental rotation, the resulting relative
 direction, and its measured distance. Before each `/cmd_vel` call it also prints
 the transmitted `linear=(x, y, z)` and `angular=(x, y, z)` vectors and duration.
 The rotation calibration does not affect forward motion: `linear.x` remains
-fixed at 0.05 m/s. Free space controls the number and duration of forward steps,
-not their speed; the proximity sensor is rechecked before every step. A photo
-is taken only after confirming there is room to advance, immediately before
-movement, and no more than once per minute.
+fixed at 0.05 m/s. The orchestrator computes a safe requested advance distance
+from the selected clearance; Advancer converts only that distance into a
+forward command. Photographer is scheduled no more than once per minute.
 
 An interactive rotation check is available but skipped by default because it
 moves the physical robot. With the robot connected and its area clear, run:

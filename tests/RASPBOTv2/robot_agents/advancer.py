@@ -1,64 +1,45 @@
-from collections.abc import Awaitable, Callable, Mapping
+import math
+from collections.abc import Awaitable, Callable
 from typing import Any
-
-from langchain_core.tools import BaseTool
 
 
 def create_advancer(
-    robot_tools: Mapping[str, BaseTool],
     drive_robot: Callable[..., Awaitable[None]],
     *,
-    minimum_distance_cm: float,
-    minimum_forward_pulse_seconds: float,
-    maximum_forward_pulse_seconds: float,
-    maximum_forward_steps: int,
     forward_speed_mps: float,
-    forward_pulse_seconds: Callable[[float], float],
-    forward_steps_for_clearance: Callable[[float], int],
+    maximum_advance_distance_cm: float,
 ):
-    """Create the node that prechecks the route, then advances in safe pulses."""
+    """Move forward by exactly the distance requested in the graph state."""
 
     async def advancer(state: dict[str, Any]) -> dict[str, Any]:
-        if not state["photo_checked"]:
-            # Only request a photo after confirming that forward motion is safe.
-            distance = float(
-                await robot_tools["read_proximity"].ainvoke({})
+        distance_cm = state["advance_distance_cm"]
+        if not math.isfinite(distance_cm) or distance_cm <= 0:
+            raise ValueError("Requested advance distance must be a positive finite value.")
+        if distance_cm > maximum_advance_distance_cm:
+            raise ValueError(
+                "Requested advance distance exceeds the configured safe maximum."
             )
-            if (
-                distance <= minimum_distance_cm
-                or forward_steps_for_clearance(distance) == 0
-                or forward_pulse_seconds(distance) < minimum_forward_pulse_seconds
-            ):
-                return {
-                    "next_agent": "explorer",
-                    "cycles": state["cycles"] + 1,
-                }
-            return {"next_agent": "photo"}
 
-        moves = 0
-        for step_index in range(maximum_forward_steps):
-            # Recheck clearance before every pulse and stop as soon as space shrinks.
-            distance = float(
-                await robot_tools["read_proximity"].ainvoke({})
-            )
-            if step_index >= forward_steps_for_clearance(distance):
-                break
+        duration = distance_cm / (forward_speed_mps * 100)
+        if not math.isfinite(duration) or duration <= 0:
+            raise ValueError("Requested advance duration is invalid.")
 
-            duration = forward_pulse_seconds(distance)
-            if duration < minimum_forward_pulse_seconds:
-                break
-
-            await drive_robot(
-                linear_x=forward_speed_mps,
-                duration=min(duration, maximum_forward_pulse_seconds),
-            )
-            moves += 1
-
-        return {
-            "next_agent": "explorer",
-            "cycles": state["cycles"] + 1,
-            "moves": state["moves"] + moves,
-            "photo_checked": False,
+        print(
+            f"Advancer: moving forward {distance_cm:.1f} cm "
+            f"at {forward_speed_mps:.3f} m/s for {duration:.2f} s."
+        )
+        await drive_robot(linear_x=forward_speed_mps, duration=duration)
+        result = {
+            "last_agent": "advancer",
+            "last_advance_distance_cm": distance_cm,
+            "last_advance_duration_seconds": duration,
         }
+        agent_results = dict(state.get("agent_results", {}))
+        agent_results["advancer"] = {
+            "requested_distance_cm": distance_cm,
+            "duration_seconds": duration,
+        }
+        result["agent_results"] = agent_results
+        return result
 
     return advancer

@@ -4,8 +4,7 @@ from typing import Any
 
 from langchain_core.tools import BaseTool
 
-# Each group contains incremental yaw changes; later groups are tried only if
-# the current group has no direction with sufficient clearance.
+
 ROTATION_GROUPS_DEGREES = (
     (0, -25, 50),
     (50, -100),
@@ -17,102 +16,140 @@ def rotation_label(degrees: int) -> str:
     return f"Z={degrees:+d}°"
 
 
-def select_direction(
-    readings: Mapping[str, float],
-    minimum_distance_cm: float,
-) -> int | None:
-    """Return the clearest safe direction, or None when every reading is blocked."""
-    clear_readings = [
-        (int(label.removeprefix("Z=").removesuffix("°")), distance)
-        for label, distance in readings.items()
-        if distance > minimum_distance_cm
-    ]
-    best_reading = max(clear_readings, key=lambda reading: reading[1], default=None)
-    return best_reading[0] if best_reading is not None else None
+async def align_to_selected_direction(
+    current_heading_degrees: int,
+    selected_angle_degrees: int | None,
+    drive_robot: Callable[..., Awaitable[None]],
+    *,
+    turn_speed_rad_s: float,
+    rotation_duration_seconds: Callable[[float], float],
+) -> int:
+    if selected_angle_degrees is None:
+        raise ValueError("Cannot align without a selected direction.")
+    delta = (selected_angle_degrees + 180) % 360 - 180
+    if delta:
+        target_heading = (current_heading_degrees + delta) % 360
+        print(
+            f"Controller: aligning to selected direction "
+            f"({current_heading_degrees}° -> {target_heading}°, turn {delta:+d}°)."
+        )
+        await drive_robot(
+            angular_z=math.copysign(turn_speed_rad_s, delta),
+            duration=rotation_duration_seconds(delta),
+        )
+    return (current_heading_degrees + delta) % 360
 
 
 def create_explorer(
     robot_tools: Mapping[str, BaseTool],
     drive_robot: Callable[..., Awaitable[None]],
     *,
-    initial_turn_speed_rad_s: float,
+    turn_speed_rad_s: float,
     rotation_duration_seconds: Callable[[float], float],
-    minimum_distance_cm: float,
+    minimum_clearance_cm: float,
 ):
-    """Create the explorer node that scans directions and selects a safe heading."""
+    """Scan directions group by group and return the clearest safe direction."""
 
-    async def turn_to_heading(current_heading: int, target_heading: int) -> int:
-        delta = (target_heading - current_heading + 180) % 360 - 180
-        if delta:
-            await drive_robot(
-                angular_z=math.copysign(initial_turn_speed_rad_s, delta),
-                duration=rotation_duration_seconds(delta),
-            )
-        return target_heading % 360
-
-    async def rotate_by_degrees(current_heading: int, degrees: int) -> int:
+    async def rotate(current_heading: int, degrees: int) -> int:
         if degrees:
             await drive_robot(
-                angular_z=math.copysign(initial_turn_speed_rad_s, degrees),
+                angular_z=math.copysign(turn_speed_rad_s, degrees),
                 duration=rotation_duration_seconds(degrees),
             )
         return (current_heading + degrees) % 360
 
     async def explorer(state: dict[str, Any]) -> dict[str, Any]:
-        """Measure each direction in order and choose the clearest safe one."""
-        readings: dict[str, float] = {}
+        readings: list[dict[str, Any]] = []
         heading = state["heading_degrees"]
         initial_heading = heading
-        heading_offset_degrees = 0
-        selected_degrees = None
-        for group in ROTATION_GROUPS_DEGREES:
-            group_readings: dict[str, float] = {}
+        offset_degrees = 0
+        selected_angle: int | None = None
+
+        for group_index, group in enumerate(ROTATION_GROUPS_DEGREES, start=1):
+            group_readings: list[tuple[int, float]] = []
             for rotation_degrees in group:
-                heading_offset_degrees += rotation_degrees
-                heading = await rotate_by_degrees(heading, rotation_degrees)
-                distance = float(
+                heading = await rotate(heading, rotation_degrees)
+                offset_degrees += rotation_degrees
+                distance_cm = float(
                     await robot_tools["read_proximity"].ainvoke({})
                 )
-                label = rotation_label(heading_offset_degrees)
-                readings[label] = distance
-                group_readings[label] = distance
-                print(
-                    f"Incremental rotation {rotation_degrees:+d}° "
-                    f"(heading {label}): measured distance {distance:.1f} cm"
+                direction = rotation_label(offset_degrees)
+                readings.append(
+                    {
+                        "group": group_index,
+                        "direction": direction,
+                        "angle_degrees": offset_degrees,
+                        "distance_cm": distance_cm,
+                    }
                 )
-            selected_degrees = select_direction(
-                group_readings,
-                minimum_distance_cm,
-            )
-            if selected_degrees is not None:
+                group_readings.append((offset_degrees, distance_cm))
+                print(
+                    f"Explorer: group {group_index}, direction {direction}, "
+                    f"clearance {distance_cm:.1f} cm"
+                )
+
+            safe_readings = [
+                reading
+                for reading in group_readings
+                if reading[1] > minimum_clearance_cm
+            ]
+            if safe_readings:
+                selected_angle = max(safe_readings, key=lambda item: item[1])[0]
                 break
 
-        if selected_degrees is None:
-            return {
-                "status": "BLOCKED",
-                "reason": "No tested direction has sufficient clearance.",
-                "next_agent": "end",
-                "heading_degrees": heading,
-                "selected_direction": None,
-                "selected_angle": None,
-                "selected_clearance_cm": None,
-                "readings": readings,
-                "scans": state["scans"] + 1,
-            }
-
-        heading = await turn_to_heading(
-            heading,
-            (initial_heading + selected_degrees) % 360,
+        selected_direction = (
+            rotation_label(selected_angle) if selected_angle is not None else None
         )
-        selected_direction = rotation_label(selected_degrees)
-        return {
-            "next_agent": "advancer",
+        selected_clearance = None
+        if selected_angle is not None:
+            selected_clearance = max(
+                distance
+                for angle, distance in group_readings
+                if angle == selected_angle
+            )
+
+        return_delta = (initial_heading - heading + 180) % 360 - 180
+        if return_delta:
+            print(
+                "Explorer: restoring starting direction "
+                f"(turn {return_delta:+d}°)."
+            )
+        heading = await rotate(heading, return_delta)
+
+        distance = (
+            selected_clearance
+            if selected_clearance is not None
+            else readings[-1]["distance_cm"]
+            if readings
+            else None
+        )
+        print(
+            "Explorer decision: "
+            f"{selected_direction or 'no safe direction'}"
+            + (
+                f" ({selected_clearance:.1f} cm)"
+                if selected_clearance is not None
+                else ""
+            )
+        )
+        result = {
+            "last_agent": "explorer",
             "heading_degrees": heading,
-            "selected_direction": selected_direction,
-            "selected_angle": selected_degrees,
-            "selected_clearance_cm": readings[selected_direction],
             "readings": readings,
+            "selected_direction": selected_direction,
+            "selected_angle_degrees": selected_angle,
+            "selected_clearance_cm": selected_clearance,
+            "previous_distance": state.get("distance"),
+            "distance": distance,
             "scans": state["scans"] + 1,
         }
+        agent_results = dict(state.get("agent_results", {}))
+        agent_results["explorer"] = {
+            "readings": readings,
+            "selected_direction": selected_direction,
+            "selected_clearance_cm": selected_clearance,
+        }
+        result["agent_results"] = agent_results
+        return result
 
     return explorer
