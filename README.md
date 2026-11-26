@@ -103,7 +103,7 @@ Example for Claude Desktop:
 # To test RASPBOTV2
 
 
-[![RASPBOTv2](https://www.youtube.com/watch?v=b55Rs0wuoDE)](https://www.youtube.com/watch?v=b55Rs0wuoDE)
+[![RASPBOTv2](https://img.youtube.com/vi/b55Rs0wuoDE/0.jpg)](https://www.youtube.com/watch?v=b55Rs0wuoDE)
 
 Run the following command on RASPBOTV2 via ssh
 
