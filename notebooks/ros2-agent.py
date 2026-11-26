@@ -1,6 +1,7 @@
 import asyncio
 import math
 import os
+import random
 import time
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -22,12 +23,27 @@ MAX_CYCLES = 1800
 
 FORWARD_SPEED_MPS = 0.10
 FORWARD_PULSE_SECONDS = 0.5
+FORWARD_SAFETY_MARGIN_CM = 2.0
+FORWARD_STEP_FRACTION = 0.5
+REVERSE_SPEED_MPS = 0.05
+REVERSE_PULSE_SECONDS = 0.25
 MAX_STRAIGHT_PULSES = 8
-TURN_SPEED_PERCENT = 20.0
-TURN_PULSE_SECONDS = 0.25
+TURN_SPEED_PERCENT = 0.25
+MAX_TURN_PERCENT = 1.0
+TURN_RATE_RAD_S_AT_FULL_SCALE = 1.0
 STOP_PULSE_SECONDS = 0.2
-SCAN_RAY_COUNT = 8
-SCAN_STEP_DEGREES = 45
+SCAN_STEP_DEGREES = 30
+SCAN_RAY_COUNT = 360 // SCAN_STEP_DEGREES
+TURN_PULSE_SECONDS = math.radians(SCAN_STEP_DEGREES) / (
+    TURN_SPEED_PERCENT * TURN_RATE_RAD_S_AT_FULL_SCALE
+)
+
+
+def forward_pulse_seconds(distance_cm):
+    clearance_cm = MIN_CLEARANCE_CM + FORWARD_SAFETY_MARGIN_CM
+    step_distance_cm = max(0.0, (distance_cm - clearance_cm) * FORWARD_STEP_FRACTION)
+    step_seconds = step_distance_cm / 100.0 / FORWARD_SPEED_MPS
+    return min(FORWARD_PULSE_SECONDS, step_seconds)
 
 
 async def explore(tools):
@@ -44,8 +60,8 @@ async def explore(tools):
             raise ValueError("Motion values must be finite.")
         if abs(linear_x) > FORWARD_SPEED_MPS:
             raise ValueError("Forward speed exceeds its configured limit.")
-        if abs(angular_z) > TURN_SPEED_PERCENT:
-            raise ValueError("Turn command exceeds its 20-percent limit.")
+        if abs(angular_z) > MAX_TURN_PERCENT:
+            raise ValueError("Turn command exceeds normalized range [-1, 1].")
         if linear_x and angular_z:
             raise ValueError("Combined translation and rotation is not supported.")
         if linear_x and duration > FORWARD_PULSE_SECONDS:
@@ -75,48 +91,55 @@ async def explore(tools):
         if result.get("status") != "completed":
             raise RuntimeError(f"drive_robot returned status {result.get('status')!r}.")
 
-    async def rotate_45(direction):
+    async def rotate_30(direction):
         if direction not in (-1, 1):
             raise ValueError("Direction must be -1 (right) or 1 (left).")
         await drive(angular_z=direction * TURN_SPEED_PERCENT, duration=TURN_PULSE_SECONDS)
 
+    async def recover_from_block():
+        await drive(-REVERSE_SPEED_MPS, duration=REVERSE_PULSE_SECONDS)
+        direction = random.choice((-1, 1))
+        for turn_count in range(1, SCAN_RAY_COUNT + 1):
+            await rotate_30(direction)
+            distance = await read_distance(sensor)
+            if distance > MIN_CLEARANCE_CM + FORWARD_SAFETY_MARGIN_CM:
+                angle = direction * turn_count * SCAN_STEP_DEGREES
+                print(f"Clear path found after recovery turn: {angle} degrees.")
+                return angle
+        print("No clear path found after reversing and checking a full turn.")
+        return None
+
     async def scan_sides(front_distance):
         readings = [front_distance]
         for _ in range(1, SCAN_RAY_COUNT):
-            await rotate_45(1)
+            await rotate_30(1)
             readings.append(await read_distance(sensor))
-        await rotate_45(1)
+        await rotate_30(1)
 
         clear_rays = [
             (index, distance)
             for index, distance in enumerate(readings)
-            if distance > MIN_CLEARANCE_CM
+            if distance > MIN_CLEARANCE_CM + FORWARD_SAFETY_MARGIN_CM
         ]
         if not clear_rays:
-            for _ in range(SCAN_RAY_COUNT // 2):
-                await rotate_45(1)
-            return None
+            return await recover_from_block()
 
         best_index, _ = max(clear_rays, key=lambda ray: ray[1])
         steps = min(best_index, SCAN_RAY_COUNT - best_index)
         direction = 1 if best_index <= SCAN_RAY_COUNT // 2 else -1
         for _ in range(steps):
-            await rotate_45(direction)
+            await rotate_30(direction)
         return best_index * SCAN_STEP_DEGREES
 
     started = time.monotonic()
     cycles = forward_steps = scans = turns = 0
-    reversed_from_block = False
     status = "TIME_LIMIT"
     reason = "Exploration time limit reached."
     try:
         while cycles < MAX_CYCLES and time.monotonic() - started < MAX_DURATION_SECONDS:
             distance = await read_distance(sensor)
             cycles += 1
-            if distance <= MIN_CLEARANCE_CM:
-                if reversed_from_block:
-                    status, reason = "BLOCKED", "Still blocked after turning around."
-                    break
+            if distance <= MIN_CLEARANCE_CM + FORWARD_SAFETY_MARGIN_CM:
                 if distance <= BLIND_ZONE_CM:
                     print("Front reading is in the blind zone; scanning all directions.")
                 direction = await scan_sides(distance)
@@ -125,17 +148,19 @@ async def explore(tools):
                     f"Scan {scans}: front={distance:.1f} cm, "
                     f"selected_angle={direction}"
                 )
-                reversed_from_block = direction is None
+                if direction is None:
+                    status, reason = "BLOCKED", "No clear path found after recovery."
+                    break
                 forward_steps = 0
                 continue
 
-            reversed_from_block = False
             if forward_steps >= MAX_STRAIGHT_PULSES:
-                await rotate_45(1 if turns % 2 == 0 else -1)
+                await rotate_30(1 if turns % 2 == 0 else -1)
                 turns += 1
                 forward_steps = 0
             else:
-                await drive(FORWARD_SPEED_MPS, duration=FORWARD_PULSE_SECONDS)
+                duration = forward_pulse_seconds(distance)
+                await drive(FORWARD_SPEED_MPS, duration=duration)
                 forward_steps += 1
         else:
             if cycles >= MAX_CYCLES:

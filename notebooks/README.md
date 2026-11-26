@@ -24,5 +24,40 @@ then
 
 ```
 cd notebooks
-python ros2-agent.py
+python ros2-agent-ai.py
 ```
+
+The LangGraph controller requires `langgraph` and `langchain-mcp-adapters` in
+the Python environment used to run the script. It treats the robot's initial
+current heading as the relative reference and saves camera images in
+`robot_photos`. The explorer rotates incrementally by -25° and then +50°,
+measuring both directions before choosing the one with the most free space.
+If neither is clear enough, it rotates by +50° and then -100°, again choosing
+the clearer direction if safe; otherwise it makes a final +100° turn and
+measures there. ROS 2 `angular.z` is an angular velocity in rad/s, not an angle:
+the controller sends `±0.25 rad/s` and computes duration from the observed
+calibration that a 45° request produced about 225° of rotation. It therefore
+uses a 5x calibrated rate (1.25 rad/s), so a 45° turn takes about 0.628 seconds.
+The heading estimate is open-loop, so actual rotation can vary with the robot
+and surface; verify it with the manual rotation test before autonomous use.
+Positive ROS Z rotates counterclockwise.
+During exploration it prints each incremental rotation, the resulting relative
+direction, and its measured distance. Before each `/cmd_vel` call it also prints
+the transmitted `linear=(x, y, z)` and `angular=(x, y, z)` vectors and duration.
+The rotation calibration does not affect forward motion: `linear.x` remains
+fixed at 0.05 m/s. Free space controls the number and duration of forward steps,
+not their speed; the proximity sensor is rechecked before every step. A photo
+is taken only after confirming there is room to advance, immediately before
+movement, and no more than once per minute.
+
+An interactive rotation check is available but skipped by default because it
+moves the physical robot. With the robot connected and its area clear, run:
+
+```bash
+RUN_RASPBOT_ROTATION_TEST=1 python -m unittest -v \
+  test_robot_navigation.RobotToolTests.test_manual_rotation_sequence_with_visual_confirmation
+```
+
+It requests `GO`, then commands incremental counterclockwise turns of 45°, 90°,
+135°, and 180°, asking for visual confirmation after each. A negative answer
+stops the sequence and sends a stop command.
