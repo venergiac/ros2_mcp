@@ -122,9 +122,15 @@ docker run -it \
 yahboomtechnology/ros-humble:0.1.0 /bin/bash -i -c "ros2 launch yahboomcar_bringup bringup.launch.py & ros2 run usb_cam usb_cam_node_exe"
 ```
 
-then
+then start MCP server
 
 ```
-cd notebooks
-python ros2-agent.py
+docker compose up --build
+```
+
+simple navigation on RASPBOTV2
+
+```
+cd tests/RASPBOTv2
+python ros2-agent-ai.py
 ```
