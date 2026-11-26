@@ -20,17 +20,25 @@ docker run -it \
 yahboomtechnology/ros-humble:0.1.0 /bin/bash -i -c "ros2 launch yahboomcar_bringup bringup.launch.py & ros2 run usb_cam usb_cam_node_exe"
 ```
 
-then
+then start MCP server
 
 ```
-cd notebooks
+docker compose up --build
+```
+
+simple navigation on RASPBOTV2
+
+```
+cd tests/RASPBOTv2
 python ros2-agent-ai.py
 ```
 
 The LangGraph controller requires `langgraph` and `langchain-mcp-adapters` in
-the Python environment used to run the script. It treats the robot's initial
-current heading as the relative reference and saves camera images in
-`robot_photos`. The explorer rotates incrementally by -25° and then +50°,
+the Python environment used to run the script. Its three node implementations
+are in `robot_agents/orchestrator.py`, `robot_agents/explorer.py`, and
+`robot_agents/advancer.py`. It treats the robot's initial current heading as
+the relative reference and saves camera images in `robot_photos`. The explorer
+rotates incrementally by -25° and then +50°,
 measuring both directions before choosing the one with the most free space.
 If neither is clear enough, it rotates by +50° and then -100°, again choosing
 the clearer direction if safe; otherwise it makes a final +100° turn and
@@ -54,6 +62,7 @@ An interactive rotation check is available but skipped by default because it
 moves the physical robot. With the robot connected and its area clear, run:
 
 ```bash
+cd tests/RASPBOTv2
 RUN_RASPBOT_ROTATION_TEST=1 python -m unittest -v \
   test_robot_navigation.RobotToolTests.test_manual_rotation_sequence_with_visual_confirmation
 ```
