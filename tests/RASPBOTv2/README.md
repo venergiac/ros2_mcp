@@ -46,7 +46,6 @@ export GROQ_API_KEY='<your Groq API key>'
 python ros2-agentic-ai.py --orchestrator llm
 ```
 
-The legacy `ros2-agent-ai.py` entry point forwards to the unified controller.
 `requirements.txt` lists the Python dependencies for the controller and notebook.
 ROS 2 and the MCP server are provided separately by the robot environment and
 the repository's Docker Compose setup. Explorer treats the robot's initial

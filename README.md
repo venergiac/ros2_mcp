@@ -135,5 +135,14 @@ simple navigation on RASPBOTV2
 
 ```
 cd tests/RASPBOTv2
-python ros2-agent-ai.py
+python ros2-agentic-ai.py
+```
+
+LLM based
+
+simple navigation on RASPBOTV2
+
+```
+cd tests/RASPBOTv2
+python ros2-agentic-ai.py --orchestrator llm
 ```
